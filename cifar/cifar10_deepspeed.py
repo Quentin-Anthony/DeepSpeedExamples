@@ -38,7 +38,7 @@ def add_argument():
 
     parser.add_argument('--log-interval',
                         type=int,
-                        default=2000,
+                        default=10,
                         help="output logging information at a given interval")
 
     parser.add_argument('--moe',
@@ -274,8 +274,9 @@ for epoch in range(2):  # loop over the dataset multiple times
     running_loss = 0.0
     for i, data in enumerate(trainloader):
         # get the inputs; data is a list of [inputs, labels]
-        inputs, labels = data[0].to(model_engine.local_rank), data[1].to(
-            model_engine.local_rank)
+        inputs, labels = data[0], data[1]
+        if torch.cuda.is_available():
+            inputs, labels = inputs.to(model_engine.local_rank), labels.to(model_engine.local_rank)
         if fp16:
             inputs = inputs.half()
         outputs = model_engine(inputs)
@@ -319,7 +320,10 @@ print('GroundTruth: ', ' '.join('%5s' % classes[labels[j]] for j in range(4)))
 # Okay, now let us see what the neural network thinks these examples above are:
 if fp16:
     images = images.half()
-outputs = net(images.to(model_engine.local_rank))
+if torch.cuda.is_available():
+    outputs = net(images.to(model_engine.local_rank))
+else:
+    outputs = net(images)
 
 ########################################################################
 # The outputs are energies for the 10 classes.
@@ -342,11 +346,17 @@ with torch.no_grad():
         images, labels = data
         if fp16:
             images = images.half()
-        outputs = net(images.to(model_engine.local_rank))
+        if torch.cuda.is_available():
+            outputs = net(images.to(model_engine.local_rank))
+        else:
+            outputs = net(images)
         _, predicted = torch.max(outputs.data, 1)
         total += labels.size(0)
-        correct += (predicted == labels.to(
-            model_engine.local_rank)).sum().item()
+        if torch.cuda.is_available():
+            correct += (predicted == labels.to(
+                model_engine.local_rank)).sum().item()
+        else:
+            correct += (predicted == labels).sum().item()
 
 print('Accuracy of the network on the 10000 test images: %d %%' %
       (100 * correct / total))
@@ -366,9 +376,15 @@ with torch.no_grad():
         images, labels = data
         if fp16:
             images = images.half()
-        outputs = net(images.to(model_engine.local_rank))
+        if torch.cuda.is_available():
+            outputs = net(images.to(model_engine.local_rank))
+        else:
+            outputs = net(images)
         _, predicted = torch.max(outputs, 1)
-        c = (predicted == labels.to(model_engine.local_rank)).squeeze()
+        if torch.cuda.is_available():
+            c = (predicted == labels.to(model_engine.local_rank)).squeeze()
+        else:
+            c = (predicted == labels).squeeze()
         for i in range(4):
             label = labels[i]
             class_correct[label] += c[i].item()
